@@ -59,6 +59,7 @@ export async function qlooGet<T = unknown>(path: string, params: Params = {}): P
     headers: { "X-Api-Key": process.env.QLOO_API_KEY as string, Accept: "application/json" },
     // Next.js fetch cache is bypassed; we keep our own.
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   });
   const text = await res.text();
   if (!res.ok) {

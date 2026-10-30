@@ -5,24 +5,11 @@
  */
 import { runTool } from "@/lib/tools";
 import { isMock } from "@/lib/qloo";
+import { planRecommendations, retryForEmpty } from "@/lib/planner";
 import type { AgentEvent, BusinessInput, Playbook } from "@/lib/agent";
 
 type Ent = { id?: string; name: string; affinity: number; tags?: string[]; address?: string; rating?: number };
 type Tag = { id: string; name: string; type: string; affinity: number };
-
-const SETS: Record<string, string[]> = {
-  barbershop: ["artist", "brand", "place", "podcast", "tv_show"],
-  salon: ["artist", "brand", "place", "podcast", "tv_show"],
-  restaurant: ["place", "artist", "brand", "podcast"],
-  cafe: ["place", "artist", "brand", "podcast"],
-  bar: ["artist", "place", "brand", "podcast"],
-  grocery: ["brand", "place", "artist", "podcast", "tv_show"],
-  convenience: ["brand", "place", "artist", "podcast"],
-  retail: ["brand", "artist", "tv_show", "place"],
-  gym: ["brand", "artist", "podcast", "place"],
-  venue: ["artist", "podcast", "place", "brand"],
-  other: ["artist", "brand", "place", "podcast"],
-};
 
 export async function runScripted(input: BusinessInput, emit: (e: AgentEvent) => void): Promise<void> {
   let n = 0;
@@ -37,12 +24,13 @@ export async function runScripted(input: BusinessInput, emit: (e: AgentEvent) =>
     return r;
   };
 
-  emit({ type: "note", text: isMock() ? "Demo mode: invented fixture data and template copy; not live Qloo results." : "Using live Qloo data with a fixed sequence and template copy." });
+  emit({ type: "note", text: isMock() ? "Demo mode: invented fixture data and template copy; not live Qloo results." : "Qloo-only decision agent: choosing tools from the business type and observed results; copy is templated." });
   const loc = await call("resolve_location", { business_name: input.name, address: input.address, city: input.city });
   if (!loc.ok) { emit({ type: "error", message: loc.note || "Could not resolve the address." }); return; }
   const L = loc.data as { point: string; locality: string; place: Ent | null; source: string; matched_address: string; precision: string };
   const demo = { age: input.age || undefined, gender: input.gender || undefined };
 
+  emit({ type: "note", text: "Decision: resolve the address first, then examine neighborhood taste and compare it with the city." });
   const [prof, cmp] = await Promise.all([
     call("taste_profile", { point: L.point, take: 20, ...demo }),
     call("compare", { point: L.point, locality: L.locality, ...demo }),
@@ -51,27 +39,42 @@ export async function runScripted(input: BusinessInput, emit: (e: AgentEvent) =>
   const over = (cmp.data as { over_index: Playbook["who"]["over_index"]; under_index: Playbook["who"]["under_index"] })?.over_index || [];
   const under = (cmp.data as { under_index: Playbook["who"]["under_index"] })?.under_index || [];
 
-  const types = SETS[input.type] || SETS.other;
-  const recs = await Promise.all(types.map((type) => call("recommend", { type, point: L.point, take: type === "artist" ? 20 : 12, ...(type === "place" ? { radius_m: 4000, exclude_entity: L.place?.id } : {}), ...demo })));
+  const plan = planRecommendations(input.type, tags);
+  emit({ type: "note", text: `Decision for ${input.type}: ${plan.map((a) => a.reason).join("; ")}.` });
+  const recs = await Promise.all(plan.map((action) => call("recommend", { type: action.type, point: L.point, take: action.type === "artist" ? 20 : 12, ...(action.tags ? { tags: action.tags } : {}), ...(action.type === "place" ? { radius_m: 4000, exclude_entity: L.place?.id } : {}), ...demo })));
+  const types = plan.map((a) => a.type);
   const by: Record<string, Ent[]> = {};
   types.forEach((t, i) => { by[t] = ((recs[i].data as { entities: Ent[] })?.entities || []).filter((e) => !L.place || e.name !== L.place!.name); });
+  // Retry only empty, tag-steered results; do not silently relax demographics or mask service errors.
+  await Promise.all(plan.map(async (action, i) => {
+    if (!retryForEmpty(by[action.type].length, !!action.tags?.length, !recs[i].endpoint)) return;
+    emit({ type: "note", text: `Decision: ${action.type} returned no matches with the observed tag; retry without that tag while retaining location and demographics.` });
+    const retry = await call("recommend", { type: action.type, point: L.point, take: action.type === "artist" ? 20 : 12, ...demo });
+    by[action.type] = ((retry.data as { entities: Ent[] })?.entities || []);
+  }));
 
   // Sparse markets may need a wider radius; never present distant results as immediately local.
   let placeRadius = 4000;
-  if (!by.place?.length && types.includes("place")) {
+  if (!by.place?.length && types.includes("place") && recs[types.indexOf("place")].endpoint) {
     for (const radius of [10000, 25000]) {
+      emit({ type: "note", text: `Decision: no nearby places found; expand the place radius to ${radius / 1000} km, keeping the same location and demographics.` });
       const expanded = await call("recommend", { type: "place", point: L.point, take: 12, radius_m: radius, exclude_entity: L.place?.id, ...demo });
+      if (!expanded.endpoint) {
+        emit({ type: "note", text: "Decision: stop widening because the place service failed; preserve the coverage warning." });
+        break;
+      }
       placeRadius = radius;
       by.place = ((expanded.data as { entities: Ent[] })?.entities || []).filter((e) => !L.place || e.name !== L.place.name);
       if (by.place.length) break;
     }
   }
 
-  if (!prof.ok && recs.every((r) => !r.ok)) {
+  if (!prof.ok && Object.values(by).every((entities) => entities.length === 0)) {
     emit({ type: "error", message: "No taste or recommendation data is available for this address. Please try again later or try another location." });
     return;
   }
 
+  emit({ type: "note", text: "Decision: stop searching and assemble the playbook from returned evidence; missing sections remain empty and coverage is disclosed." });
   const top = (k: string, n: number) => (by[k] || []).slice(0, n);
   const t3 = tags.slice(0, 3).map((t) => t.name).join(", ");
   const days = ["Tuesday", "Thursday", "Saturday"];

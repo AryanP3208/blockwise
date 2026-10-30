@@ -6,7 +6,7 @@ Blockwise helps a local business explore modeled taste affinities around its add
 
 1. The server verifies a street-level address using Esri World Geocoding. A Qloo business record is attached only if its name, address and coordinates match.
 2. Qloo `/v2/insights` supplies taste tags and artist, brand, place and media affinities using the address location and optional demographic signals. A city comparison subtracts affinities from two taste-analysis queries; it is not the Qloo compare endpoint.
-3. The default Qloo-only mode runs a fixed set of calls in parallel and generates template-based suggestions. An optional Anthropic key enables an experimental tool-use loop. That optional path is not verified as part of the Qloo-only demo.
+3. The default Qloo-only mode is a bounded, deterministic decision agent: it selects entity types by business, uses compatible tags observed in the taste profile to steer recommendations, retries empty tag-steered results without that tag, and widens the place radius when needed. The trace explains each decision. Suggestions are assembled with templates. An optional Anthropic key enables an experimental tool-use loop. That optional path is not verified as part of the Qloo-only demo.
 4. The interface streams the data steps and presents a playbook with text and print-to-PDF export.
 
 Affinities are modeled signals, not evidence of actual customers, purchases, causality or probabilities. Ideas and bilingual posts require review before use. Missing data is not evidence of zero interest. Estimates for interpolated addresses can be imprecise. Geocoding sends the entered address to Esri; the returned location is sent to Qloo. Qloo responses are cached only in server memory. Geographic and demographic coverage may vary.
@@ -32,7 +32,7 @@ Deploy the Next.js project to a compatible hosting service such as Vercel. Add `
 
 ## Known limitations
 
-- The default flow is deterministic, not an autonomous LLM agent. Do not describe it as model-driven without testing and configuring the optional model path.
+- The default flow is a rule-based agent, not an LLM agent. Do not describe it as model-driven without testing and configuring the optional model path.
 - In thin-coverage areas nearby places may be empty. The default 4 km radius expands to 10 km, then 25 km, only when no places are returned; a coverage note records the radius.
 - The business-type templates are starting points, not validated marketing advice or translations certified by a professional.
 - The address verifier is deliberately conservative; some valid addresses or non-US formats may fail verification.

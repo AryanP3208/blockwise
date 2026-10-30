@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "qloo:check": "tsx scripts/qloo-check.mjs",
-    "test:location": "tsx --test tests/location.test.ts"
+    "test:location": "tsx --test tests/location.test.ts",
+    "test:planner": "tsx --test tests/planner.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
