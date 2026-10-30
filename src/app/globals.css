@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Blockwise palette: paper and ink with one green accent; the trace panel reads like a terminal. */
+:root {
+  --paper: #f5f1ea;
+  --paper-2: #ebe5da;
+  --ink: #17140f;
+  --ink-2: #5c554a;
+  --line: #d9d1c3;
+  --green: #1f5c4a;
+  --green-2: #2f7a63;
+  --green-soft: #dfeee7;
+  --amber: #b8731b;
+  --card: #fffdf9;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-green: var(--green);
+  --color-green-2: var(--green-2);
+  --color-green-soft: var(--green-soft);
+  --color-amber: var(--amber);
+  --color-card: var(--card);
+  --font-sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-sans); background: var(--paper); color: var(--ink); }
+
+.display { font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.01em; line-height: 1; }
+.mono { font-family: var(--font-mono); }
+.bar { height: 6px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--green), var(--green-2)); border-radius: 999px; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .print-break { break-before: page; }
+}
